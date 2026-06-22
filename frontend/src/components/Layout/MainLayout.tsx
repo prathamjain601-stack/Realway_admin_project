@@ -1,11 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useSocketStore } from '../../store/useSocketStore';
 
 const MainLayout = () => {
   const token = useAuthStore((state) => state.token);
+  const connect = useSocketStore((s) => s.connect);
+  const disconnect = useSocketStore((s) => s.disconnect);
+
+  useEffect(() => {
+    if (token) {
+      connect(token);
+    }
+    return () => disconnect();
+  }, [token]);
 
   if (!token) {
     return <Navigate to="/login" replace />;

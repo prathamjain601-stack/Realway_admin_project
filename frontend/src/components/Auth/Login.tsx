@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useNavigate, Link } from 'react-router-dom';
+import api from '../../services/api';
 import { Lock, Mail, Loader2 } from 'lucide-react';
 
 const Login = () => {
@@ -18,8 +18,8 @@ const Login = () => {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', { email, password });
-      setAuth(response.data.token, response.data.user);
+      const response = await api.post('/auth/login', { email, password });
+      setAuth(response.data.token, response.data.refreshToken, response.data.user);
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
@@ -59,6 +59,7 @@ const Login = () => {
                   <Mail size={18} className="text-gray-500" />
                 </div>
                 <input
+                  id="login-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -76,6 +77,7 @@ const Login = () => {
                   <Lock size={18} className="text-gray-500" />
                 </div>
                 <input
+                  id="login-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -87,6 +89,7 @@ const Login = () => {
             </div>
 
             <button
+              id="login-submit"
               type="submit"
               disabled={loading}
               className="w-full bg-primary-600 hover:bg-primary-500 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 mt-4 shadow-lg shadow-primary-500/20 disabled:opacity-70 disabled:cursor-not-allowed"
@@ -94,6 +97,13 @@ const Login = () => {
               {loading ? <Loader2 size={20} className="animate-spin" /> : 'Sign In'}
             </button>
           </form>
+
+          <p className="text-center text-sm text-gray-400">
+            Don't have an account?{' '}
+            <Link to="/register" className="text-primary-400 hover:text-primary-300 font-medium transition-colors">
+              Create Account
+            </Link>
+          </p>
         </div>
       </div>
     </div>

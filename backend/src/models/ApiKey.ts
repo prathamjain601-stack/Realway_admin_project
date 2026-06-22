@@ -7,6 +7,8 @@ export class ApiKey extends Model {
   public key!: string;
   public name!: string;
   public isRevoked!: boolean;
+  public readonly createdAt!: Date;
+  public readonly updatedAt!: Date;
 }
 
 ApiKey.init(

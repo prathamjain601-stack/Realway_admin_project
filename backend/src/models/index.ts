@@ -7,16 +7,17 @@ import { SystemMetric } from './SystemMetric';
 import { Notification } from './Notification';
 import { Session } from './Session';
 import { ApiKey } from './ApiKey';
+import { SystemSetting } from './SystemSetting';
 
 // Define relationships
 User.hasMany(Post, { foreignKey: 'authorId' });
-Post.belongsTo(User, { foreignKey: 'authorId' });
+Post.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
 
 Category.hasMany(Post, { foreignKey: 'categoryId' });
 Post.belongsTo(Category, { foreignKey: 'categoryId' });
 
 User.hasMany(AuditLog, { foreignKey: 'userId' });
-AuditLog.belongsTo(User, { foreignKey: 'userId' });
+AuditLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 User.hasMany(Notification, { foreignKey: 'userId' });
 Notification.belongsTo(User, { foreignKey: 'userId' });
@@ -36,5 +37,6 @@ export {
   SystemMetric,
   Notification,
   Session,
-  ApiKey
+  ApiKey,
+  SystemSetting
 };

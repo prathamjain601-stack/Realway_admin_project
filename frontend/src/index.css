@@ -12,3 +12,160 @@
 .glass-panel {
   @apply bg-dark-card/70 backdrop-blur-md border border-dark-border shadow-xl;
 }
+
+/* TipTap Editor Styles */
+.tiptap {
+  outline: none;
+}
+
+.tiptap p {
+  margin: 0.5em 0;
+}
+
+.tiptap h1 {
+  font-size: 1.75em;
+  font-weight: 700;
+  margin: 0.75em 0 0.5em;
+  color: #f8fafc;
+}
+
+.tiptap h2 {
+  font-size: 1.35em;
+  font-weight: 600;
+  margin: 0.75em 0 0.5em;
+  color: #f8fafc;
+}
+
+.tiptap h3 {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: 0.75em 0 0.5em;
+  color: #e2e8f0;
+}
+
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.tiptap ul {
+  list-style: disc;
+}
+
+.tiptap ol {
+  list-style: decimal;
+}
+
+.tiptap li {
+  margin: 0.25em 0;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid #3b82f6;
+  padding-left: 1em;
+  margin: 1em 0;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.tiptap code {
+  background: rgba(59, 130, 246, 0.15);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #93c5fd;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tiptap pre {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 1em;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.tiptap pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  color: #e2e8f0;
+}
+
+.tiptap a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.tiptap mark {
+  background-color: rgba(250, 204, 21, 0.3);
+  border-radius: 2px;
+  padding: 0.1em 0.2em;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid #334155;
+  margin: 1.5em 0;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #4b5563;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInFromRight {
+  from { transform: translateX(10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideInFromTop {
+  from { transform: translateY(-5px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-in {
+  animation-duration: 300ms;
+  animation-fill-mode: forwards;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.slide-in-from-right-4 {
+  animation-name: slideInFromRight;
+}
+
+.slide-in-from-top-2 {
+  animation-name: slideInFromTop;
+}

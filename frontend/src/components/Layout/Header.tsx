@@ -1,6 +1,7 @@
 import React from 'react';
-import { Bell, UserCircle } from 'lucide-react';
+import { UserCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import NotificationPanel from '../Notifications/NotificationPanel';
 
 const Header = () => {
   const user = useAuthStore((state) => state.user);
@@ -13,16 +14,19 @@ const Header = () => {
         </h2>
       </div>
       <div className="flex items-center space-x-4">
-        <button className="p-2 rounded-full hover:bg-dark-card transition-colors relative">
-          <Bell size={20} className="text-gray-400" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-        </button>
+        <NotificationPanel />
         <div className="flex items-center space-x-2">
           <div className="text-right hidden md:block">
-            <p className="text-sm font-medium">{user?.email}</p>
+            <p className="text-sm font-medium">
+              {user?.firstName && user?.lastName
+                ? `${user.firstName} ${user.lastName}`
+                : user?.email}
+            </p>
             <p className="text-xs text-gray-400">{user?.role}</p>
           </div>
-          <UserCircle size={32} className="text-primary-500" />
+          <div className="w-9 h-9 rounded-full bg-primary-500/20 flex items-center justify-center text-primary-400 font-semibold">
+            {(user?.firstName?.[0] || user?.email?.[0] || 'U').toUpperCase()}
+          </div>
         </div>
       </div>
     </header>
