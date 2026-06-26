@@ -1,4 +1,4 @@
-import { SystemMetric } from '../models';
+import { SystemMetric, Notification, User, SystemSetting } from '../models';
 import os from 'os';
 
 let serverStartTime = Date.now();
@@ -56,8 +56,90 @@ const formatUptime = (seconds: number): string => {
   return parts.join(' ');
 };
 
+// Default alert thresholds
+const DEFAULT_THRESHOLDS = {
+  memoryPercent: 90,
+  apiResponseMs: 2000,
+};
+
+/**
+ * Load alert thresholds from the database settings,
+ * falling back to defaults if not configured.
+ */
+const getAlertThresholds = async () => {
+  try {
+    const settings = await SystemSetting.findAll({
+      where: {
+        key: ['alert_memory_percent', 'alert_api_response_ms'],
+      },
+    });
+
+    const map: Record<string, string> = {};
+    settings.forEach((s: any) => { map[s.key] = s.value; });
+
+    return {
+      memoryPercent: parseInt(map['alert_memory_percent']) || DEFAULT_THRESHOLDS.memoryPercent,
+      apiResponseMs: parseInt(map['alert_api_response_ms']) || DEFAULT_THRESHOLDS.apiResponseMs,
+    };
+  } catch {
+    return DEFAULT_THRESHOLDS;
+  }
+};
+
+/**
+ * Check health against thresholds and emit alerts.
+ */
+const checkThresholds = async (health: ReturnType<typeof getSystemHealth>, socketSvc: any) => {
+  if (!socketSvc) return;
+
+  const thresholds = await getAlertThresholds();
+  const alerts: { severity: string; message: string }[] = [];
+
+  // Memory threshold
+  if (health.memoryUsage.percentUsed > thresholds.memoryPercent) {
+    alerts.push({
+      severity: 'critical',
+      message: `Memory usage at ${health.memoryUsage.percentUsed}% (threshold: ${thresholds.memoryPercent}%)`,
+    });
+  }
+
+  // API response time threshold
+  if (health.api.avgResponseTime > thresholds.apiResponseMs && health.api.totalRequests > 10) {
+    alerts.push({
+      severity: 'high',
+      message: `Average API response time is ${health.api.avgResponseTime}ms (threshold: ${thresholds.apiResponseMs}ms)`,
+    });
+  }
+
+  // Send alerts
+  for (const alert of alerts) {
+    socketSvc.emitSystemAlert({
+      type: 'threshold',
+      severity: alert.severity,
+      message: alert.message,
+      timestamp: new Date(),
+    });
+
+    // Also create notification records for all admin users
+    try {
+      const admins = await User.findAll({ where: { role: 'Admin' }, attributes: ['id'] });
+      const notifs = admins.map((admin: any) => ({
+        userId: admin.id,
+        title: `System Alert: ${alert.severity.toUpperCase()}`,
+        message: alert.message,
+        type: 'warning' as const,
+      }));
+      if (notifs.length > 0) {
+        await Notification.bulkCreate(notifs);
+      }
+    } catch (err) {
+      console.error('Failed to create alert notifications:', err);
+    }
+  }
+};
+
 // Periodically record system metrics to DB
-export const startMetricsCollector = (intervalMs: number = 60000) => {
+export const startMetricsCollector = (intervalMs: number = 60000, socketSvc?: any) => {
   serverStartTime = Date.now();
 
   const collect = async () => {
@@ -70,6 +152,9 @@ export const startMetricsCollector = (intervalMs: number = 60000) => {
         { metricName: 'api_avg_response_ms', metricValue: health.api.avgResponseTime, timestamp: new Date() },
         { metricName: 'api_total_requests', metricValue: health.api.totalRequests, timestamp: new Date() },
       ]);
+
+      // Check thresholds and emit alerts
+      await checkThresholds(health, socketSvc);
     } catch (err) {
       console.error('Metrics collector error:', err);
     }

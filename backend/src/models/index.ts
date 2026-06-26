@@ -8,6 +8,9 @@ import { Notification } from './Notification';
 import { Session } from './Session';
 import { ApiKey } from './ApiKey';
 import { SystemSetting } from './SystemSetting';
+import { PostVersion } from './PostVersion';
+import { ChatMessage } from './ChatMessage';
+import { ErrorLog } from './ErrorLog';
 
 // Define relationships
 User.hasMany(Post, { foreignKey: 'authorId' });
@@ -28,6 +31,15 @@ Session.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(ApiKey, { foreignKey: 'userId' });
 ApiKey.belongsTo(User, { foreignKey: 'userId' });
 
+// Post versioning relationships
+Post.hasMany(PostVersion, { foreignKey: 'postId', as: 'versions' });
+PostVersion.belongsTo(Post, { foreignKey: 'postId' });
+PostVersion.belongsTo(User, { foreignKey: 'editedById', as: 'editor' });
+
+// Chat relationships
+User.hasMany(ChatMessage, { foreignKey: 'senderId' });
+ChatMessage.belongsTo(User, { foreignKey: 'senderId', as: 'sender' });
+
 export {
   sequelize,
   User,
@@ -38,5 +50,9 @@ export {
   Notification,
   Session,
   ApiKey,
-  SystemSetting
+  SystemSetting,
+  PostVersion,
+  ChatMessage,
+  ErrorLog,
 };
+

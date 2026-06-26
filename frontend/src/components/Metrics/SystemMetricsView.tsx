@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
-import { Cpu, HardDrive, Clock, Zap, RefreshCw, Loader2 } from 'lucide-react';
+import { Cpu, HardDrive, Clock, Zap, RefreshCw, Loader2, Calendar } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface SystemHealth {
@@ -17,12 +17,21 @@ const SystemMetricsView = () => {
   const [metricsHistory, setMetricsHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMetric, setSelectedMetric] = useState('memory_percent');
+  const [timeRange, setTimeRange] = useState('24');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const fetchData = async () => {
     try {
+      let metricsQuery = `/metrics?name=${selectedMetric}&hours=${timeRange}`;
+      if (timeRange === 'custom' && customStart && customEnd) {
+        metricsQuery = `/metrics?name=${selectedMetric}&startDate=${customStart}&endDate=${customEnd}`;
+      }
+
       const [healthRes, metricsRes] = await Promise.all([
         api.get('/metrics/system-health'),
-        api.get(`/metrics?name=${selectedMetric}&hours=24`),
+        api.get(metricsQuery),
       ]);
       setHealth(healthRes.data);
       setMetricsHistory(
@@ -40,9 +49,9 @@ const SystemMetricsView = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [selectedMetric]);
+  }, [selectedMetric, timeRange, customStart, customEnd]);
 
   if (loading) {
     return (
@@ -86,6 +95,14 @@ const SystemMetricsView = () => {
     },
   ];
 
+  const timeRangeOptions = [
+    { v: '6', l: '6h' },
+    { v: '12', l: '12h' },
+    { v: '24', l: '24h' },
+    { v: '72', l: '3d' },
+    { v: '168', l: '7d' },
+  ];
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -116,19 +133,79 @@ const SystemMetricsView = () => {
 
       {/* Chart */}
       <div className="glass-panel p-6 rounded-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-bold text-white">Metric History (24h)</h2>
-          <select
-            value={selectedMetric}
-            onChange={(e) => setSelectedMetric(e.target.value)}
-            className="bg-dark-bg/50 border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="memory_percent">Memory %</option>
-            <option value="cpu_load_1m">CPU Load</option>
-            <option value="api_avg_response_ms">API Response Time</option>
-            <option value="heap_used_mb">Heap Usage (MB)</option>
-          </select>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <h2 className="text-lg font-bold text-white">Metric History</h2>
+          <div className="flex items-center gap-3">
+            <div className="flex gap-1 bg-dark-bg/50 rounded-lg p-1">
+              {timeRangeOptions.map(({ v, l }) => (
+                <button
+                  key={v}
+                  onClick={() => { setTimeRange(v); setShowDatePicker(false); }}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    timeRange === v ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowDatePicker(!showDatePicker)}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${
+                  timeRange === 'custom' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <Calendar size={11} />
+                Custom
+              </button>
+            </div>
+
+            <select
+              value={selectedMetric}
+              onChange={(e) => setSelectedMetric(e.target.value)}
+              className="bg-dark-bg/50 border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="memory_percent">Memory %</option>
+              <option value="cpu_load_1m">CPU Load</option>
+              <option value="api_avg_response_ms">API Response Time</option>
+              <option value="heap_used_mb">Heap Usage (MB)</option>
+            </select>
+          </div>
         </div>
+
+        {showDatePicker && (
+          <div className="flex items-end gap-3 mb-4 p-3 bg-dark-bg/50 rounded-lg border border-dark-border animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="space-y-1">
+              <label className="text-xs text-gray-400 font-medium">Start</label>
+              <input
+                type="datetime-local"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="bg-dark-bg border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-gray-400 font-medium">End</label>
+              <input
+                type="datetime-local"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="bg-dark-bg border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <button
+              onClick={() => {
+                if (customStart && customEnd) {
+                  setTimeRange('custom');
+                  setShowDatePicker(false);
+                }
+              }}
+              className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            >
+              Apply
+            </button>
+          </div>
+        )}
+
         <div className="h-72">
           {metricsHistory.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">

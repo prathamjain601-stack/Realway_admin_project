@@ -103,6 +103,9 @@ export const setupSockets = (io: Server) => {
     emitMetricsUpdate: (payload: any) => {
       io.emit('metrics:update', payload);
     },
+    emitAdminChat: (payload: any) => {
+      io.to('admin_room').emit('admin:chat:message', payload);
+    },
     getConnectedCount: () => connectedUsers.size,
   };
 };

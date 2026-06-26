@@ -10,7 +10,7 @@ import api from '../../services/api';
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter,
   AlignRight, List, ListOrdered, Heading1, Heading2, Quote, Code, Link as LinkIcon,
-  Highlighter, Undo2, Redo2, Save, ArrowLeft, Loader2, X, Star
+  Highlighter, Undo2, Redo2, Save, ArrowLeft, Loader2, X, Star, History, RotateCcw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -25,6 +25,16 @@ interface Category {
   name: string;
 }
 
+interface VersionItem {
+  id: number;
+  version: number;
+  title: string;
+  status: string;
+  changeNote: string | null;
+  createdAt: string;
+  editor?: { firstName: string; lastName: string; email: string } | null;
+}
+
 const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
   const [title, setTitle] = useState('');
   const [status, setStatus] = useState<'draft' | 'published' | 'archived'>('draft');
@@ -36,6 +46,9 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
   const [publishedAt, setPublishedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!postId);
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState<VersionItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -120,6 +133,43 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
     }
   };
 
+  const fetchHistory = async () => {
+    if (!postId) return;
+    setLoadingHistory(true);
+    try {
+      const { data } = await api.get(`/content/posts/${postId}/history`);
+      setVersions(data);
+    } catch {
+      toast.error('Failed to load version history');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleToggleHistory = () => {
+    if (!showHistory) {
+      fetchHistory();
+    }
+    setShowHistory(!showHistory);
+  };
+
+  const handleRestore = async (versionId: number, versionNum: number) => {
+    if (!confirm(`Restore to version ${versionNum}? Current content will be saved as a new version first.`)) return;
+    try {
+      const { data } = await api.post(`/content/posts/${postId}/restore/${versionId}`);
+      toast.success(data.message);
+      // Reload editor with restored content
+      if (data.post && editor) {
+        setTitle(data.post.title);
+        editor.commands.setContent(data.post.content || '');
+        setStatus(data.post.status);
+      }
+      fetchHistory();
+    } catch {
+      toast.error('Failed to restore version');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -151,6 +201,19 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
           </h1>
         </div>
         <div className="flex items-center gap-3">
+          {postId && (
+            <button
+              onClick={handleToggleHistory}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                showHistory
+                  ? 'bg-primary-500/20 text-primary-400 border-primary-500/30'
+                  : 'bg-dark-card border-dark-border text-gray-300 hover:text-white hover:border-primary-500/50'
+              }`}
+            >
+              <History size={16} />
+              History
+            </button>
+          )}
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as any)}
@@ -173,7 +236,7 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Editor */}
-        <div className="lg:col-span-3 space-y-4">
+        <div className={`${showHistory ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-4`}>
           {/* Title */}
           <input
             id="post-title"
@@ -313,6 +376,67 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
             />
           </div>
         </div>
+
+        {/* Version History Panel */}
+        {showHistory && (
+          <div className="glass-panel rounded-xl p-4 space-y-3 animate-in fade-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <History size={16} className="text-primary-400" />
+                Edit History
+              </h3>
+              <button onClick={() => setShowHistory(false)} className="text-gray-500 hover:text-white transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-primary-500" />
+              </div>
+            ) : versions.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">No version history yet</p>
+            ) : (
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                {versions.map((v) => (
+                  <div key={v.id} className="p-3 bg-dark-bg/40 rounded-lg border border-dark-border/50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-primary-400">v{v.version}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                        v.status === 'published'
+                          ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                          : v.status === 'archived'
+                          ? 'bg-gray-500/10 text-gray-400 border-gray-500/20'
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      }`}>
+                        {v.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-300 font-medium truncate">{v.title}</p>
+                    {v.changeNote && (
+                      <p className="text-[11px] text-gray-500 italic">"{v.changeNote}"</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div className="text-[11px] text-gray-500">
+                        <span>{v.editor ? `${v.editor.firstName || ''} ${v.editor.lastName || ''}`.trim() || v.editor.email : 'Unknown'}</span>
+                        <span className="mx-1">·</span>
+                        <span>{new Date(v.createdAt).toLocaleString()}</span>
+                      </div>
+                      <button
+                        onClick={() => handleRestore(v.id, v.version)}
+                        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-primary-400 hover:text-white hover:bg-primary-500/20 rounded transition-colors"
+                        title="Restore this version"
+                      >
+                        <RotateCcw size={12} />
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

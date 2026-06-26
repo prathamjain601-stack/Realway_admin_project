@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { User, Session, AuditLog } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { sendVerificationEmail } from '../services/emailService';
+import { socketService } from '../server';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_for_development_change_in_prod';
 
@@ -46,6 +47,17 @@ export const register = async (req: Request, res: Response): Promise<any> => {
       ipAddress: req.ip || null,
       userAgent: req.headers['user-agent'] || null,
     });
+
+    // Emit real-time activity event
+    if (socketService) {
+      socketService.emitActivityLog({
+        action: 'USER_REGISTER',
+        userId: user.id,
+        email,
+        userName: `${firstName || ''} ${lastName || ''}`.trim() || email,
+        timestamp: new Date(),
+      });
+    }
 
     res.status(201).json({
       message: 'User registered successfully. Please check your email to verify your account.',
@@ -124,6 +136,17 @@ export const login = async (req: Request, res: Response): Promise<any> => {
       ipAddress: req.ip || null,
       userAgent: req.headers['user-agent'] || null,
     });
+
+    // Emit real-time activity event
+    if (socketService) {
+      socketService.emitActivityLog({
+        action: 'USER_LOGIN',
+        userId: user.id,
+        email: user.email,
+        userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+        timestamp: new Date(),
+      });
+    }
 
     res.json({
       token,

@@ -14,9 +14,11 @@ import contentRoutes from './routes/contentRoutes';
 import metricRoutes from './routes/metricRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import adminRoutes from './routes/adminRoutes';
+import chatRoutes from './routes/chatRoutes';
 import { setupSockets } from './sockets';
 import { apiLimiter } from './middleware/rateLimiter';
 import { trackRequest, startMetricsCollector } from './services/metricsCollector';
+import { ErrorLog } from './models';
 
 dotenv.config();
 
@@ -65,10 +67,45 @@ app.use('/api/content', contentRoutes);
 app.use('/api/metrics', metricRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Realway Aura API is running.', timestamp: new Date() });
+});
+
+// Global error handler — captures unhandled errors and logs them to ErrorLog
+app.use(async (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled Error:', err);
+
+  try {
+    await ErrorLog.create({
+      level: 'error',
+      message: err.message || 'Unknown error',
+      stack: err.stack || null,
+      endpoint: req.originalUrl || null,
+      method: req.method || null,
+      statusCode: err.status || 500,
+      userId: (req as any).user?.id || null,
+    });
+  } catch (logErr) {
+    console.error('Failed to save error log:', logErr);
+  }
+
+  // Emit system alert for critical errors
+  if (socketService) {
+    socketService.emitSystemAlert({
+      type: 'error',
+      severity: 'high',
+      message: `Server error on ${req.method} ${req.originalUrl}: ${err.message}`,
+      timestamp: new Date(),
+    });
+  }
+
+  res.status(err.status || 500).json({
+    message: 'Internal server error',
+    ...(process.env.NODE_ENV !== 'production' && { error: err.message }),
+  });
 });
 
 const PORT = process.env.PORT || 5000;
@@ -78,8 +115,8 @@ const startServer = async () => {
   await connectDB();
   await sequelize.sync({ alter: true });
 
-  // Start metrics collection (every 60 seconds)
-  startMetricsCollector(60000);
+  // Start metrics collection (every 60 seconds) with socket service for alerts
+  startMetricsCollector(60000, socketService);
 
   server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);

@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { Op } from 'sequelize';
-import { Post, Category, User } from '../models';
+import { Post, Category, User, PostVersion } from '../models';
 import { AuthRequest } from '../middleware/auth';
+import { socketService } from '../server';
 
 export const createPost = async (req: AuthRequest, res: Response) => {
   try {
@@ -17,6 +18,17 @@ export const createPost = async (req: AuthRequest, res: Response) => {
       authorId: req.user!.id,
     });
 
+    // Create initial version snapshot
+    await PostVersion.create({
+      postId: post.id,
+      version: 1,
+      title: post.title,
+      content: post.content,
+      status: post.status,
+      editedById: req.user!.id,
+      changeNote: 'Initial creation',
+    });
+
     const fullPost = await Post.findByPk(post.id, {
       include: [
         { model: Category },
@@ -25,6 +37,21 @@ export const createPost = async (req: AuthRequest, res: Response) => {
     });
 
     res.status(201).json(fullPost);
+
+    // Emit real-time events
+    if (socketService) {
+      socketService.emitActivityLog({
+        action: 'CREATE_POST',
+        userId: req.user!.id,
+        entityType: 'Post',
+        entityId: post.id,
+        message: `Created post: "${title}"`,
+        timestamp: new Date(),
+      });
+      if (status === 'published') {
+        socketService.emitContentUpdate({ id: post.id, title, action: 'published' });
+      }
+    }
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
   }
@@ -98,6 +125,24 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<any> 
     const post = await Post.findByPk(req.params.id as string);
     if (!post) return res.status(404).json({ message: 'Post not found' });
 
+    // Save current state as a new version BEFORE applying updates
+    const latestVersion = await PostVersion.findOne({
+      where: { postId: post.id },
+      order: [['version', 'DESC']],
+    });
+    const nextVersion = (latestVersion?.version || 0) + 1;
+
+    await PostVersion.create({
+      postId: post.id,
+      version: nextVersion,
+      title: post.title,
+      content: post.content,
+      status: post.status,
+      editedById: req.user!.id,
+      changeNote: req.body.changeNote || null,
+    });
+
+    // Now apply updates
     const { title, content, status, isFeatured, categoryId, publishedAt, tags } = req.body;
 
     const updates: any = {};
@@ -105,7 +150,6 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<any> 
     if (content !== undefined) updates.content = content;
     if (status !== undefined) {
       updates.status = status;
-      // Auto-set publishedAt when publishing for the first time
       if (status === 'published' && !post.publishedAt) {
         updates.publishedAt = publishedAt || new Date();
       }
@@ -125,6 +169,18 @@ export const updatePost = async (req: AuthRequest, res: Response): Promise<any> 
     });
 
     res.json(updated);
+
+    // Emit real-time events
+    if (socketService) {
+      socketService.emitActivityLog({
+        action: 'UPDATE_POST',
+        userId: req.user!.id,
+        entityType: 'Post',
+        entityId: post.id,
+        message: `Updated post: "${updated?.title || title}"`,
+        timestamp: new Date(),
+      });
+    }
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
   }
@@ -134,12 +190,97 @@ export const deletePost = async (req: Request, res: Response): Promise<any> => {
   try {
     const post = await Post.findByPk(req.params.id as string);
     if (!post) return res.status(404).json({ message: 'Post not found' });
+    const postTitle = post.title;
+    const postId = post.id;
     await post.destroy();
+
+    // Emit real-time event
+    if (socketService) {
+      socketService.emitActivityLog({
+        action: 'DELETE_POST',
+        entityType: 'Post',
+        entityId: postId,
+        message: `Deleted post: "${postTitle}"`,
+        timestamp: new Date(),
+      });
+    }
+
     res.json({ message: 'Post deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
   }
 };
+
+// ─── Post Version History ───
+
+export const getPostHistory = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const postId = req.params.id as string;
+    const post = await Post.findByPk(postId);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const versions = await PostVersion.findAll({
+      where: { postId },
+      include: [{ model: User, as: 'editor', attributes: ['id', 'email', 'firstName', 'lastName'] }],
+      order: [['version', 'DESC']],
+    });
+
+    res.json(versions);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+export const restorePostVersion = async (req: AuthRequest, res: Response): Promise<any> => {
+  try {
+    const id = req.params.id as string;
+    const versionId = req.params.versionId as string;
+    const post = await Post.findByPk(id);
+    if (!post) return res.status(404).json({ message: 'Post not found' });
+
+    const version = await PostVersion.findOne({
+      where: { id: versionId, postId: id },
+    });
+    if (!version) return res.status(404).json({ message: 'Version not found' });
+
+    // Save current state as a version before restoring
+    const latestVersion = await PostVersion.findOne({
+      where: { postId: post.id },
+      order: [['version', 'DESC']],
+    });
+    const nextVersion = (latestVersion?.version || 0) + 1;
+
+    await PostVersion.create({
+      postId: post.id,
+      version: nextVersion,
+      title: post.title,
+      content: post.content,
+      status: post.status,
+      editedById: req.user!.id,
+      changeNote: `Before restore to v${version.version}`,
+    });
+
+    // Restore the post to the selected version
+    await post.update({
+      title: version.title,
+      content: version.content,
+      status: version.status,
+    });
+
+    const updated = await Post.findByPk(post.id, {
+      include: [
+        { model: Category },
+        { model: User, as: 'author', attributes: ['id', 'email', 'firstName', 'lastName'] },
+      ],
+    });
+
+    res.json({ message: `Restored to version ${version.version}`, post: updated });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+// ─── Categories ───
 
 export const createCategory = async (req: Request, res: Response) => {
   try {

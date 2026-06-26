@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import MetricsWidget from './MetricsWidget';
-import { Users, FileText, Activity, Server, TrendingUp, Download, Clock } from 'lucide-react';
+import { Users, FileText, Activity, TrendingUp, Download, Clock, FileDown, Calendar } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSocketStore } from '../../store/useSocketStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import api from '../../services/api';
+import toast from 'react-hot-toast';
 
 interface DashboardMetrics {
-  users: { total: number; active: number; new24h: number; new7d: number; new30d: number };
+  users: { total: number; active: number; new24h: number; new7d: number; new30d: number; newInRange?: number };
   posts: { total: number; published: number; drafts: number };
 }
 
@@ -25,16 +26,28 @@ const Dashboard = () => {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [timeRange, setTimeRange] = useState('7');
   const [loading, setLoading] = useState(true);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const liveUsers = useSocketStore((s) => s.liveUsers);
+  const realtimeActivity = useSocketStore((s) => s.recentActivity);
+  const systemAlerts = useSocketStore((s) => s.systemAlerts);
   const token = useAuthStore((s) => s.token);
 
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
       try {
+        // Build growth query — use custom dates or days
+        let growthQuery = `/metrics/user-growth?days=${timeRange}`;
+        if (timeRange === 'custom' && customStartDate && customEndDate) {
+          growthQuery = `/metrics/user-growth?startDate=${customStartDate}&endDate=${customEndDate}`;
+        }
+
         const [metricsRes, growthRes, activityRes] = await Promise.all([
           api.get('/metrics/dashboard'),
-          api.get(`/metrics/user-growth?days=${timeRange}`),
+          api.get(growthQuery),
           api.get('/metrics/recent-activity?limit=10'),
         ]);
         setMetrics(metricsRes.data);
@@ -50,20 +63,52 @@ const Dashboard = () => {
       }
     };
     fetchAll();
-  }, [timeRange]);
+  }, [timeRange, customStartDate, customEndDate]);
 
-  const handleExport = async () => {
+  // Show system alert toasts
+  useEffect(() => {
+    if (systemAlerts.length > 0) {
+      const latest = systemAlerts[0];
+      toast.error(`⚠️ ${latest.message}`, {
+        duration: 8000,
+        id: `alert-${latest.timestamp}`,
+      });
+    }
+  }, [systemAlerts]);
+
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    setShowExportMenu(false);
     try {
-      const response = await api.get('/metrics/export?format=csv&days=30', { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      toast.loading(`Generating ${format.toUpperCase()} report...`, { id: 'export' });
+
+      let exportQuery = `/metrics/export?format=${format}&days=30`;
+      if (customStartDate && customEndDate) {
+        exportQuery = `/metrics/export?format=${format}&startDate=${customStartDate}&endDate=${customEndDate}`;
+      }
+
+      const response = await api.get(exportQuery, { responseType: 'blob' });
+      const ext = format === 'pdf' ? 'pdf' : 'csv';
+      const mimeType = format === 'pdf' ? 'application/pdf' : 'text/csv';
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: mimeType }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `metrics-${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `metrics-report-${new Date().toISOString().split('T')[0]}.${ext}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`${format.toUpperCase()} exported successfully`, { id: 'export' });
     } catch (error) {
-      console.error('Export failed');
+      toast.error('Export failed', { id: 'export' });
+    }
+  };
+
+  const handleApplyCustomRange = () => {
+    if (customStartDate && customEndDate) {
+      setTimeRange('custom');
+      setShowDatePicker(false);
+    } else {
+      toast.error('Please select both start and end dates');
     }
   };
 
@@ -94,13 +139,35 @@ const Dashboard = () => {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white tracking-tight">System Overview</h1>
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300 hover:text-white hover:border-primary-500/50 transition-colors"
-          >
-            <Download size={16} />
-            Export
-          </button>
+          {/* Export Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300 hover:text-white hover:border-primary-500/50 transition-colors"
+            >
+              <Download size={16} />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-44 bg-dark-card border border-dark-border rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                <button
+                  onClick={() => handleExport('csv')}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-300 hover:bg-dark-border/50 hover:text-white transition-colors"
+                >
+                  <FileDown size={16} className="text-green-400" />
+                  Export as CSV
+                </button>
+                <button
+                  onClick={() => handleExport('pdf')}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-300 hover:bg-dark-border/50 hover:text-white transition-colors border-t border-dark-border"
+                >
+                  <FileDown size={16} className="text-red-400" />
+                  Export as PDF
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 px-3 py-1.5 bg-dark-card rounded-full border border-dark-border">
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -145,22 +212,64 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Chart Area */}
         <div className="lg:col-span-2 glass-panel p-6 rounded-2xl">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
             <h2 className="text-lg font-bold text-white">User Growth</h2>
-            <div className="flex gap-1 bg-dark-bg/50 rounded-lg p-1">
-              {[{ v: '7', l: '7D' }, { v: '30', l: '30D' }, { v: '90', l: '90D' }].map(({ v, l }) => (
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 bg-dark-bg/50 rounded-lg p-1">
+                {[{ v: '7', l: '7D' }, { v: '30', l: '30D' }, { v: '90', l: '90D' }].map(({ v, l }) => (
+                  <button
+                    key={v}
+                    onClick={() => { setTimeRange(v); setShowDatePicker(false); }}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                      timeRange === v ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:text-gray-200'
+                    }`}
+                  >
+                    {l}
+                  </button>
+                ))}
                 <button
-                  key={v}
-                  onClick={() => setTimeRange(v)}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    timeRange === v ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:text-gray-200'
+                  onClick={() => setShowDatePicker(!showDatePicker)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors flex items-center gap-1 ${
+                    timeRange === 'custom' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:text-gray-200'
                   }`}
                 >
-                  {l}
+                  <Calendar size={12} />
+                  Custom
                 </button>
-              ))}
+              </div>
             </div>
           </div>
+
+          {/* Custom Date Range Picker */}
+          {showDatePicker && (
+            <div className="flex items-end gap-3 mb-4 p-3 bg-dark-bg/50 rounded-lg border border-dark-border animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400 font-medium">Start Date</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="bg-dark-bg border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400 font-medium">End Date</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="bg-dark-bg border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <button
+                onClick={handleApplyCustomRange}
+                className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-1.5 rounded-lg text-sm font-medium transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+          )}
+
           <div className="h-72 w-full">
             {growthData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
