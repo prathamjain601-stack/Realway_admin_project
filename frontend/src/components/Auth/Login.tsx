@@ -1,28 +1,53 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
-import { Lock, Mail, Loader2 } from 'lucide-react';
+import { Lock, Mail, Loader2, AlertTriangle } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [isMaintenanceActive, setIsMaintenanceActive] = useState(false);
   const setAuth = useAuthStore((state) => state.setAuth);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // On mount: if redirected with ?maintenance=true, verify with backend
+  useEffect(() => {
+    if (searchParams.get('maintenance') === 'true') {
+      api.get('/auth/maintenance-status')
+        .then(({ data }) => {
+          if (data.maintenanceMode) {
+            setIsMaintenanceActive(true);
+          }
+          // Clear the URL param either way so a manual refresh re-checks
+          setSearchParams({}, { replace: true });
+        })
+        .catch(() => {
+          setSearchParams({}, { replace: true });
+        });
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setMaintenanceMessage('');
 
     try {
       const response = await api.post('/auth/login', { email, password });
       setAuth(response.data.token, response.data.refreshToken, response.data.user);
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      if (err.response?.status === 503 && err.response?.data?.maintenanceMode) {
+        setMaintenanceMessage(err.response.data.message);
+      } else {
+        setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -44,6 +69,19 @@ const Login = () => {
             <h2 className="text-3xl font-bold text-white tracking-tight">Welcome Back</h2>
             <p className="text-gray-400 mt-2">Sign in to your Aura Admin account</p>
           </div>
+
+          {/* Maintenance mode banner */}
+          {(isMaintenanceActive || maintenanceMessage) && (
+            <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle size={20} className="text-amber-400 mt-0.5 flex-shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-amber-300">System Under Maintenance</p>
+                <p className="text-xs text-amber-400/80">
+                  {maintenanceMessage || 'The system is currently under maintenance. Only administrators can log in at this time.'}
+                </p>
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded-lg text-sm text-center">
@@ -111,3 +149,4 @@ const Login = () => {
 };
 
 export default Login;
+

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -6,11 +6,15 @@ import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import Highlight from '@tiptap/extension-highlight';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
+import Color from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
 import api from '../../services/api';
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough, AlignLeft, AlignCenter,
   AlignRight, List, ListOrdered, Heading1, Heading2, Quote, Code, Link as LinkIcon,
-  Highlighter, Undo2, Redo2, Save, ArrowLeft, Loader2, X, Star, History, RotateCcw
+  Highlighter, Undo2, Redo2, Save, ArrowLeft, Loader2, X, Star, History, RotateCcw,
+  ImageIcon, Palette, Unlink
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -50,6 +54,9 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
   const [versions, setVersions] = useState<VersionItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -57,7 +64,10 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Highlight.configure({ multicolor: true }),
-      Link.configure({ openOnClick: false }),
+      Link.configure({ openOnClick: false, HTMLAttributes: { class: 'text-primary-400 underline cursor-pointer' } }),
+      Image.configure({ inline: false, allowBase64: true }),
+      TextStyle,
+      Color,
     ],
     editorProps: {
       attributes: {
@@ -65,6 +75,52 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
       },
     },
   });
+
+  // Close color picker on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(e.target as Node)) {
+        setShowColorPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleAddLink = () => {
+    if (!editor) return;
+    const previousUrl = editor.getAttributes('link').href;
+    const url = window.prompt('Enter URL:', previousUrl || 'https://');
+    if (url === null) return;
+    if (url === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
+  };
+
+  const handleAddImage = () => {
+    if (!editor) return;
+    const url = window.prompt('Enter image URL:');
+    if (url) {
+      editor.chain().focus().setImage({ src: url }).run();
+    }
+  };
+
+  const TEXT_COLORS = [
+    { name: 'Default', value: '' },
+    { name: 'White', value: '#f8fafc' },
+    { name: 'Red', value: '#ef4444' },
+    { name: 'Orange', value: '#f97316' },
+    { name: 'Amber', value: '#f59e0b' },
+    { name: 'Green', value: '#22c55e' },
+    { name: 'Blue', value: '#3b82f6' },
+    { name: 'Purple', value: '#8b5cf6' },
+    { name: 'Pink', value: '#ec4899' },
+    { name: 'Cyan', value: '#06b6d4' },
+    { name: 'Gray', value: '#94a3b8' },
+    { name: 'Yellow', value: '#facc15' },
+  ];
 
   useEffect(() => {
     api.get('/content/categories').then(({ data }) => setCategories(data)).catch(() => {});
@@ -248,7 +304,7 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
           />
 
           {/* Toolbar */}
-          <div className="glass-panel rounded-xl p-2 flex flex-wrap gap-0.5">
+          <div className="glass-panel relative z-10 rounded-xl p-2 flex flex-wrap gap-0.5">
             <MenuButton onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive('bold')} title="Bold">
               <Bold size={16} />
             </MenuButton>
@@ -294,6 +350,47 @@ const PostEditor: React.FC<PostEditorProps> = ({ postId, onBack, onSaved }) => {
             <MenuButton onClick={() => editor?.chain().focus().toggleHighlight().run()} active={editor?.isActive('highlight')} title="Highlight">
               <Highlighter size={16} />
             </MenuButton>
+            <div className="w-px bg-dark-border mx-1"></div>
+            <MenuButton onClick={handleAddLink} active={editor?.isActive('link')} title="Insert Link">
+              <LinkIcon size={16} />
+            </MenuButton>
+            {editor?.isActive('link') && (
+              <MenuButton onClick={() => editor?.chain().focus().unsetLink().run()} title="Remove Link">
+                <Unlink size={16} />
+              </MenuButton>
+            )}
+            <MenuButton onClick={handleAddImage} title="Insert Image">
+              <ImageIcon size={16} />
+            </MenuButton>
+            <div className="w-px bg-dark-border mx-1"></div>
+            {/* Text Color Picker */}
+            <div className="relative" ref={colorPickerRef}>
+              <MenuButton onClick={() => setShowColorPicker(!showColorPicker)} active={showColorPicker} title="Text Color">
+                <Palette size={16} />
+              </MenuButton>
+              {showColorPicker && (
+                <div className="absolute top-full left-0 mt-1 bg-dark-card border border-dark-border rounded-lg p-2 shadow-xl z-50 grid grid-cols-4 gap-1 w-36 animate-in fade-in slide-in-from-top-1 duration-150">
+                  {TEXT_COLORS.map((color) => (
+                    <button
+                      key={color.name}
+                      onClick={() => {
+                        if (color.value === '') {
+                          editor?.chain().focus().unsetColor().run();
+                        } else {
+                          editor?.chain().focus().setColor(color.value).run();
+                        }
+                        setShowColorPicker(false);
+                      }}
+                      className="w-7 h-7 rounded-md border border-dark-border/50 hover:scale-110 transition-transform flex items-center justify-center"
+                      style={{ backgroundColor: color.value || '#1e293b' }}
+                      title={color.name}
+                    >
+                      {color.value === '' && <X size={10} className="text-gray-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="w-px bg-dark-border mx-1"></div>
             <MenuButton onClick={() => editor?.chain().focus().undo().run()} title="Undo">
               <Undo2 size={16} />

@@ -9,6 +9,7 @@ import UsersManagement from './components/Users/UsersManagement';
 import ContentPage from './components/Content/ContentPage';
 import SystemMetricsView from './components/Metrics/SystemMetricsView';
 import SettingsView from './components/Settings/SettingsView';
+import MaintenanceView from './pages/MaintenanceView';
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/maintenance" element={<MaintenanceView />} />
 
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Dashboard />} />

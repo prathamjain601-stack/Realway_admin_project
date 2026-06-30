@@ -2,12 +2,29 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { User, Session, AuditLog } from '../models';
+import { User, Session, AuditLog, SystemSetting } from '../models';
 import { AuthRequest } from '../middleware/auth';
 import { sendVerificationEmail } from '../services/emailService';
 import { socketService } from '../server';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_for_development_change_in_prod';
+
+/**
+ * Reads the session timeout from the SystemSettings table.
+ * Returns duration in minutes (defaults to 1440 = 24 hours if not set).
+ */
+const getSessionTimeoutMinutes = async (): Promise<number> => {
+  try {
+    const setting = await SystemSetting.findOne({ where: { key: 'sessionTimeout' } });
+    if (setting) {
+      const minutes = parseInt((setting as any).value, 10);
+      if (!isNaN(minutes) && minutes > 0) return minutes;
+    }
+  } catch {
+    // DB error — fall back to default
+  }
+  return 1440; // 24 hours default
+};
 
 export const register = async (req: Request, res: Response): Promise<any> => {
   try {
@@ -108,6 +125,17 @@ export const login = async (req: Request, res: Response): Promise<any> => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    // Block non-admin logins during maintenance mode
+    if (user.role !== 'Admin') {
+      const maintenanceSetting = await SystemSetting.findOne({ where: { key: 'maintenanceMode' } });
+      if (maintenanceSetting && (maintenanceSetting as any).value === 'true') {
+        return res.status(503).json({
+          message: 'System is under maintenance. Only administrators can log in at this time.',
+          maintenanceMode: true,
+        });
+      }
+    }
+
     // Update last login
     await user.update({ lastLogin: new Date() });
 
@@ -116,14 +144,19 @@ export const login = async (req: Request, res: Response): Promise<any> => {
       role: user.role,
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1d' });
-    const refreshToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+    // Read session timeout from DB settings (in minutes)
+    const timeoutMinutes = await getSessionTimeoutMinutes();
+    const timeoutSeconds = timeoutMinutes * 60;
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: timeoutSeconds });
+    const refreshToken = jwt.sign(payload, JWT_SECRET, { expiresIn: timeoutSeconds * 7 });
 
     // Create session
     await Session.create({
       userId: user.id,
       token,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() + timeoutMs),
       ipAddress: req.ip || req.socket?.remoteAddress || null,
     });
 
@@ -206,11 +239,16 @@ export const refreshToken = async (req: Request, res: Response): Promise<any> =>
     }
 
     const payload = { id: user.id, role: user.role };
-    const newToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '1d' });
+    // Read session timeout from DB settings (in minutes)
+    const timeoutMinutes = await getSessionTimeoutMinutes();
+    const timeoutSeconds = timeoutMinutes * 60;
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+
+    const newToken = jwt.sign(payload, JWT_SECRET, { expiresIn: timeoutSeconds });
 
     // Update session
     await Session.update(
-      { token: newToken, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+      { token: newToken, expiresAt: new Date(Date.now() + timeoutMs) },
       { where: { userId: user.id } }
     );
 
@@ -233,5 +271,15 @@ export const getMe = async (req: AuthRequest, res: Response): Promise<any> => {
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
+  }
+};
+
+export const getMaintenanceStatus = async (_req: Request, res: Response) => {
+  try {
+    const setting = await SystemSetting.findOne({ where: { key: 'maintenanceMode' } });
+    const isActive = setting ? (setting as any).value === 'true' : false;
+    res.json({ maintenanceMode: isActive });
+  } catch (error) {
+    res.json({ maintenanceMode: false });
   }
 };

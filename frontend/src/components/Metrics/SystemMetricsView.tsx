@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
-import { Cpu, HardDrive, Clock, Zap, RefreshCw, Loader2, Calendar } from 'lucide-react';
+import { Cpu, HardDrive, Clock, Zap, RefreshCw, Loader2, Calendar, Download, FileText } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import toast from 'react-hot-toast';
 
 interface SystemHealth {
   uptime: number;
@@ -107,13 +108,61 @@ const SystemMetricsView = () => {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white tracking-tight">System Metrics</h1>
-        <button
-          onClick={fetchData}
-          className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
-        >
-          <RefreshCw size={16} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              try {
+                const params = timeRange === 'custom' && customStart && customEnd
+                  ? `format=csv&startDate=${customStart}&endDate=${customEnd}`
+                  : `format=csv&days=${timeRange === 'custom' ? '30' : Math.ceil(parseInt(timeRange) / 24)}`;
+                const res = await api.get(`/metrics/export?${params}`, { responseType: 'blob' });
+                const url = window.URL.createObjectURL(new Blob([res.data]));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `metrics-export-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                toast.success('CSV downloaded');
+              } catch {
+                toast.error('Export failed');
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300 hover:text-white hover:border-green-500/50 transition-colors"
+          >
+            <Download size={16} className="text-green-400" />
+            CSV
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const params = timeRange === 'custom' && customStart && customEnd
+                  ? `format=pdf&startDate=${customStart}&endDate=${customEnd}`
+                  : `format=pdf&days=${timeRange === 'custom' ? '30' : Math.ceil(parseInt(timeRange) / 24)}`;
+                const res = await api.get(`/metrics/export?${params}`, { responseType: 'blob' });
+                const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `metrics-report-${new Date().toISOString().split('T')[0]}.pdf`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                toast.success('PDF downloaded');
+              } catch {
+                toast.error('Export failed');
+              }
+            }}
+            className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300 hover:text-white hover:border-red-500/50 transition-colors"
+          >
+            <FileText size={16} className="text-red-400" />
+            PDF
+          </button>
+          <button
+            onClick={fetchData}
+            className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300 hover:text-white transition-colors"
+          >
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metric Cards */}

@@ -17,6 +17,7 @@ import adminRoutes from './routes/adminRoutes';
 import chatRoutes from './routes/chatRoutes';
 import { setupSockets } from './sockets';
 import { apiLimiter } from './middleware/rateLimiter';
+import { maintenanceMode } from './middleware/maintenanceMode';
 import { trackRequest, startMetricsCollector } from './services/metricsCollector';
 import { ErrorLog } from './models';
 
@@ -59,6 +60,9 @@ app.use('/api/', apiLimiter);
 
 // Setup Swagger
 setupSwagger(app);
+
+// Maintenance mode check (after rate limiter, before routes)
+app.use(maintenanceMode);
 
 // API Routes
 app.use('/api/auth', authRoutes);

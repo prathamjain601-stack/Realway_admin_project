@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, logout, refreshToken, verifyEmail, getMe } from '../controllers/authController';
+import { register, login, logout, refreshToken, verifyEmail, getMe, getMaintenanceStatus } from '../controllers/authController';
 import { authenticate } from '../middleware/auth';
 import { authLimiter } from '../middleware/rateLimiter';
 
@@ -11,5 +11,6 @@ router.post('/logout', authenticate, logout);
 router.post('/refresh-token', refreshToken);
 router.get('/verify-email', verifyEmail);
 router.get('/me', authenticate, getMe);
+router.get('/maintenance-status', getMaintenanceStatus);
 
 export default router;

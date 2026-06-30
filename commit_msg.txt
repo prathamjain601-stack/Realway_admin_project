@@ -1,0 +1,27 @@
+feat: implement advanced analytics, real-time chat, and system administration
+
+This commit introduces major additions to the admin dashboard, completing 4 key phases of development:
+
+Phase 1: Dashboard & Analytics
+- Implemented server-side PDF export for dashboard metrics using pdfkit.
+- Added custom date range filtering support for analytics and system health metrics.
+
+Phase 2: Content Management
+- Introduced PostVersion model for comprehensive article edit history tracking.
+- Implemented auto-versioning snapshots on post updates.
+- Added a slide-in History UI to the Post Editor with one-click restore functionality.
+
+Phase 3: Real-Time Features
+- Integrated WebSocket broadcasts for live activity feed updates (logins, content CRUD).
+- Added threshold-based system alerts (Memory > 90%, API Response > 2000ms).
+- Created a persistent Admin Chat widget with DB storage (ChatMessage model) and live sync.
+- Implemented global error handling middleware backed by a new ErrorLog database model.
+
+Phase 4: System Administration
+- Built a Docker-aware Database Backup service (backupService.ts) to create and restore .sql dumps natively.
+- Added an Email configuration testing tool using Nodemailer and Ethereal.
+- Migrated rate limiting to a dynamic "soft" approach (reads config from DB with 60s cache).
+- Completely redesigned SettingsView.tsx into a 7-tab interface to manage General settings, API Keys, Audit Logs, Emails, Backups, Rate Limiting, and Error Logs.
+
+Fix:
+- Resolved TypeScript errors (req.params casting) in adminController and contentController.
