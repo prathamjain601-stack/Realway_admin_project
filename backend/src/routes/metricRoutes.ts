@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import { getDashboardMetrics, getUserGrowth, getSystemHealthEndpoint, getRecentActivity, getMetrics, exportMetrics } from '../controllers/metricController';
-import { authenticate, authorizeRoles } from '../middleware/auth';
+import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
 router.use(authenticate);
-router.use(authorizeRoles('Admin', 'Manager'));
 
 router.get('/dashboard', getDashboardMetrics);
 router.get('/user-growth', getUserGrowth);
