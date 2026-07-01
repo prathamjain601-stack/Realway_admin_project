@@ -4,10 +4,108 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { User, Session, AuditLog, SystemSetting } from '../models';
 import { AuthRequest } from '../middleware/auth';
-import { sendVerificationEmail } from '../services/emailService';
+import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService';
 import { socketService } from '../server';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_for_development_change_in_prod';
+
+/**
+ * Forgot Password — generates a one-time reset token and emails it.
+ * The token secret includes the user's current passwordHash so it
+ * auto-invalidates the moment the password is changed.
+ */
+export const forgotPassword = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const user = await User.findOne({ where: { email } });
+
+    // Always return success to avoid leaking whether the email exists
+    if (!user) {
+      return res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+    }
+
+    // Secret = global secret + user's current hash (makes the token single-use)
+    const resetSecret = JWT_SECRET + user.passwordHash;
+    const resetToken = jwt.sign({ id: user.id, email: user.email }, resetSecret, { expiresIn: '1h' });
+
+    await sendPasswordResetEmail(user.email, resetToken);
+
+    // Audit log
+    await AuditLog.create({
+      userId: user.id,
+      action: 'PASSWORD_RESET_REQUEST',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: req.ip || null,
+      userAgent: req.headers['user-agent'] || null,
+    });
+
+    res.json({ message: 'If an account with that email exists, a reset link has been sent.' });
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/**
+ * Reset Password — verifies the one-time token and sets the new password.
+ */
+export const resetPassword = async (req: Request, res: Response): Promise<any> => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: 'Token and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // First decode without verification to extract the user id
+    const decoded: any = jwt.decode(token);
+    if (!decoded || !decoded.id) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+
+    const user = await User.findByPk(decoded.id);
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+
+    // Verify with the secret that includes the user's CURRENT password hash
+    // If the password was already changed, this verification will fail
+    const resetSecret = JWT_SECRET + user.passwordHash;
+    try {
+      jwt.verify(token, resetSecret);
+    } catch {
+      return res.status(400).json({ message: 'Invalid or expired reset token. This link may have already been used.' });
+    }
+
+    // Update password (beforeUpdate hook will bcrypt-hash it)
+    await user.update({ passwordHash: newPassword });
+
+    // Audit log
+    await AuditLog.create({
+      userId: user.id,
+      action: 'PASSWORD_RESET',
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: req.ip || null,
+      userAgent: req.headers['user-agent'] || null,
+    });
+
+    res.json({ message: 'Password has been reset successfully. You can now log in with your new password.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
 
 /**
  * Reads the session timeout from the SystemSettings table.

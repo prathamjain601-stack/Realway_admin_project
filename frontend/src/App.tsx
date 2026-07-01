@@ -4,6 +4,8 @@ import { Toaster } from 'react-hot-toast';
 import MainLayout from './components/Layout/MainLayout';
 import Login from './components/Auth/Login';
 import RegisterPage from './components/Auth/RegisterPage';
+import ForgotPassword from './components/Auth/ForgotPassword';
+import ResetPassword from './components/Auth/ResetPassword';
 import Dashboard from './components/Dashboard/Dashboard';
 import UsersManagement from './components/Users/UsersManagement';
 import ContentPage from './components/Content/ContentPage';
@@ -35,6 +37,8 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/maintenance" element={<MaintenanceView />} />
 
           <Route path="/" element={<MainLayout />}>
