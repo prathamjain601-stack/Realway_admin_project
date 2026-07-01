@@ -14,6 +14,26 @@ const swaggerDocument = {
       description: 'Development server',
     },
   ],
+  components: {
+    securitySchemes: {
+      BearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Login via /api/auth/login to obtain a JWT token.',
+      },
+      ApiKeyAuth: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'x-api-key',
+        description: 'Generate an API key from System Settings → API Keys.',
+      },
+    },
+  },
+  security: [
+    { BearerAuth: [] },
+    { ApiKeyAuth: [] },
+  ],
   paths: {
     '/api/health': {
       get: {
