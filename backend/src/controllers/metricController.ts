@@ -63,20 +63,56 @@ export const getUserGrowth = async (req: Request, res: Response) => {
   try {
     const { start, end } = parseDateRange(req.query, 30);
 
-    const growth = await User.findAll({
+    // --- 1. Build a continuous array of dates for the entire range ---
+    const dates: string[] = [];
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    const endDate = new Date(end);
+    endDate.setHours(23, 59, 59, 999);
+
+    while (cursor <= endDate) {
+      dates.push(cursor.toISOString().split('T')[0]); // "YYYY-MM-DD"
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    // --- 2. Get daily new signups (GROUP BY date) ---
+    const dailySignups = await User.findAll({
       attributes: [
         [fn('DATE', col('createdAt')), 'date'],
         [fn('COUNT', col('id')), 'count'],
       ],
       where: {
-        createdAt: { [Op.between]: [start, end] },
+        createdAt: { [Op.between]: [start, endDate] },
       },
       group: [fn('DATE', col('createdAt'))],
       order: [[fn('DATE', col('createdAt')), 'ASC']],
       raw: true,
     });
 
-    res.json(growth);
+    // Build a lookup map: "YYYY-MM-DD" -> daily count
+    const signupMap = new Map<string, number>();
+    (dailySignups as any[]).forEach((row) => {
+      signupMap.set(row.date, parseInt(row.count, 10));
+    });
+
+    // --- 3. Count users created BEFORE the range start (baseline) ---
+    const baselineCount = await User.count({
+      where: { createdAt: { [Op.lt]: start } },
+    });
+
+    // --- 4. Assemble the final array with cumulative totals ---
+    let cumulative = baselineCount;
+    const result = dates.map((date) => {
+      const dailyNew = signupMap.get(date) || 0;
+      cumulative += dailyNew;
+      return {
+        date,            // ISO date string "YYYY-MM-DD"
+        count: dailyNew, // new signups this day
+        total: cumulative, // cumulative total users up to & including this day
+      };
+    });
+
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
   }

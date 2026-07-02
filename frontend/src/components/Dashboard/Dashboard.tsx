@@ -30,6 +30,7 @@ const Dashboard = () => {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
+  const [chartMode, setChartMode] = useState<'total' | 'daily'>('total');
   const liveUsers = useSocketStore((s) => s.liveUsers);
   const realtimeActivity = useSocketStore((s) => s.recentActivity);
   const systemAlerts = useSocketStore((s) => s.systemAlerts);
@@ -53,7 +54,8 @@ const Dashboard = () => {
         setMetrics(metricsRes.data);
         setGrowthData(growthRes.data.map((d: any) => ({
           date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          users: parseInt(d.count),
+          users: d.total,       // cumulative total users
+          newUsers: d.count,    // daily new signups
         })));
         setActivity(activityRes.data);
       } catch (error) {
@@ -213,7 +215,27 @@ const Dashboard = () => {
         {/* Chart Area */}
         <div className="lg:col-span-2 glass-panel p-6 rounded-2xl">
           <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-            <h2 className="text-lg font-bold text-white">User Growth</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-white">User Growth</h2>
+              <div className="flex gap-1 bg-dark-bg/50 rounded-lg p-0.5">
+                <button
+                  onClick={() => setChartMode('total')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    chartMode === 'total' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Total Users
+                </button>
+                <button
+                  onClick={() => setChartMode('daily')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    chartMode === 'daily' ? 'bg-green-500/20 text-green-400' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Daily New
+                </button>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
               <div className="flex gap-1 bg-dark-bg/50 rounded-lg p-1">
                 {[{ v: '7', l: '7D' }, { v: '30', l: '30D' }, { v: '90', l: '90D' }].map(({ v, l }) => (
@@ -276,18 +298,40 @@ const Dashboard = () => {
                 <AreaChart data={growthData}>
                   <defs>
                     <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      <stop offset="5%" stopColor={chartMode === 'total' ? '#3b82f6' : '#22c55e'} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={chartMode === 'total' ? '#3b82f6' : '#22c55e'} stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                  <XAxis dataKey="date" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <XAxis
+                    dataKey="date"
+                    stroke="#94a3b8"
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={growthData.length > 30 ? Math.floor(growthData.length / 8) : growthData.length > 14 ? 2 : 0}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    allowDecimals={false}
+                    domain={chartMode === 'total' ? ['dataMin', 'auto'] : [0, 'auto']}
+                  />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', color: '#f8fafc' }}
-                    itemStyle={{ color: '#3b82f6' }}
+                    formatter={(value: number, name: string) => {
+                      const label = name === 'users' ? 'Total Users' : 'New Signups';
+                      return [value, label];
+                    }}
+                    labelStyle={{ color: '#94a3b8', marginBottom: 4 }}
                   />
-                  <Area type="monotone" dataKey="users" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" />
+                  {chartMode === 'total' ? (
+                    <Area type="stepAfter" dataKey="users" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorUsers)" name="users" />
+                  ) : (
+                    <Area type="stepAfter" dataKey="newUsers" stroke="#22c55e" strokeWidth={2} fillOpacity={1} fill="url(#colorUsers)" name="newUsers" />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
