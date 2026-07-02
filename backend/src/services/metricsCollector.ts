@@ -5,6 +5,30 @@ let serverStartTime = Date.now();
 let requestCount = 0;
 let totalResponseTime = 0;
 
+// Windows does not support os.loadavg(), so we calculate CPU usage manually
+let currentCpuPercent = 0;
+let lastCpus = os.cpus();
+
+setInterval(() => {
+  const cpus = os.cpus();
+  let idleDifference = 0;
+  let totalDifference = 0;
+  
+  for (let i = 0; i < cpus.length; i++) {
+    const startObj = lastCpus[i].times;
+    const endObj = cpus[i].times;
+    const startTotal = Object.values(startObj).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+    const endTotal = Object.values(endObj).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+    totalDifference += (endTotal - startTotal);
+    idleDifference += (endObj.idle - startObj.idle);
+  }
+  
+  if (totalDifference > 0) {
+    currentCpuPercent = (1 - (idleDifference / totalDifference)) * 100;
+  }
+  lastCpus = cpus;
+}, 2000);
+
 export const trackRequest = (responseTimeMs: number) => {
   requestCount++;
   totalResponseTime += responseTimeMs;
@@ -22,10 +46,11 @@ export const getSystemHealth = () => {
       rss: Math.round(memUsage.rss / 1024 / 1024),
       heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
       heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
-      percentUsed: Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100),
+      heapPercent: Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100),
+      systemPercent: Math.round(((os.totalmem() - os.freemem()) / os.totalmem()) * 100),
     },
     cpu: {
-      loadAvg1m: cpuUsage[0]?.toFixed(2) ?? '0',
+      loadAvg1m: currentCpuPercent.toFixed(2),
       loadAvg5m: cpuUsage[1]?.toFixed(2) ?? '0',
       loadAvg15m: cpuUsage[2]?.toFixed(2) ?? '0',
       cores: os.cpus().length,
@@ -59,6 +84,7 @@ const formatUptime = (seconds: number): string => {
 // Default alert thresholds
 const DEFAULT_THRESHOLDS = {
   memoryPercent: 90,
+  cpuPercent: 90,
   apiResponseMs: 2000,
 };
 
@@ -70,7 +96,7 @@ const getAlertThresholds = async () => {
   try {
     const settings = await SystemSetting.findAll({
       where: {
-        key: ['alert_memory_percent', 'alert_api_response_ms'],
+        key: ['alert_memory_percent', 'alert_cpu_percent', 'alert_api_response_ms'],
       },
     });
 
@@ -79,6 +105,7 @@ const getAlertThresholds = async () => {
 
     return {
       memoryPercent: parseInt(map['alert_memory_percent']) || DEFAULT_THRESHOLDS.memoryPercent,
+      cpuPercent: parseInt(map['alert_cpu_percent']) || DEFAULT_THRESHOLDS.cpuPercent,
       apiResponseMs: parseInt(map['alert_api_response_ms']) || DEFAULT_THRESHOLDS.apiResponseMs,
     };
   } catch {
@@ -95,11 +122,19 @@ const checkThresholds = async (health: ReturnType<typeof getSystemHealth>, socke
   const thresholds = await getAlertThresholds();
   const alerts: { severity: string; message: string }[] = [];
 
-  // Memory threshold
-  if (health.memoryUsage.percentUsed > thresholds.memoryPercent) {
+  // System memory threshold
+  if (health.memoryUsage.systemPercent > thresholds.memoryPercent) {
     alerts.push({
       severity: 'critical',
-      message: `Memory usage at ${health.memoryUsage.percentUsed}% (threshold: ${thresholds.memoryPercent}%)`,
+      message: `System memory usage at ${health.memoryUsage.systemPercent}% (threshold: ${thresholds.memoryPercent}%)`,
+    });
+  }
+
+  // CPU threshold
+  if (currentCpuPercent > thresholds.cpuPercent) {
+    alerts.push({
+      severity: 'high',
+      message: `CPU usage at ${currentCpuPercent.toFixed(1)}% (threshold: ${thresholds.cpuPercent}%)`,
     });
   }
 
@@ -145,12 +180,14 @@ export const startMetricsCollector = (intervalMs: number = 60000, socketSvc?: an
   const collect = async () => {
     try {
       const health = getSystemHealth();
+      const now = new Date();
       await SystemMetric.bulkCreate([
-        { metricName: 'cpu_load_1m', metricValue: parseFloat(health.cpu.loadAvg1m), timestamp: new Date() },
-        { metricName: 'memory_percent', metricValue: health.memoryUsage.percentUsed, timestamp: new Date() },
-        { metricName: 'heap_used_mb', metricValue: health.memoryUsage.heapUsed, timestamp: new Date() },
-        { metricName: 'api_avg_response_ms', metricValue: health.api.avgResponseTime, timestamp: new Date() },
-        { metricName: 'api_total_requests', metricValue: health.api.totalRequests, timestamp: new Date() },
+        { metricName: 'cpu_usage_percent', metricValue: parseFloat(health.cpu.loadAvg1m), timestamp: now },
+        { metricName: 'system_memory_percent', metricValue: health.memoryUsage.systemPercent, timestamp: now },
+        { metricName: 'heap_percent', metricValue: health.memoryUsage.heapPercent, timestamp: now },
+        { metricName: 'heap_used_mb', metricValue: health.memoryUsage.heapUsed, timestamp: now },
+        { metricName: 'api_avg_response_ms', metricValue: health.api.avgResponseTime, timestamp: now },
+        { metricName: 'api_total_requests', metricValue: health.api.totalRequests, timestamp: now },
       ]);
 
       // Check thresholds and emit alerts

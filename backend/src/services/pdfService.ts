@@ -16,7 +16,7 @@ interface DashboardData {
 interface SystemHealthData {
   uptime?: number;
   uptimeFormatted?: string;
-  memoryUsage?: { rss: number; heapUsed: number; heapTotal: number; percentUsed: number };
+  memoryUsage?: { rss: number; heapUsed: number; heapTotal: number; heapPercent: number; systemPercent: number };
   cpu?: { loadAvg1m: string; cores: number };
   api?: { totalRequests: number; avgResponseTime: number };
   system?: { platform: string; nodeVersion: string; totalMemory: number; freeMemory: number };
@@ -136,8 +136,9 @@ function drawSystemHealth(doc: PDFKit.PDFDocument, health: SystemHealthData) {
 
   const rows = [
     ['Uptime', health.uptimeFormatted || '—'],
-    ['Memory Usage', `${health.memoryUsage?.percentUsed ?? 0}% (${health.memoryUsage?.heapUsed ?? 0}MB / ${health.memoryUsage?.heapTotal ?? 0}MB)`],
-    ['CPU Load (1m)', health.cpu?.loadAvg1m || '0'],
+    ['System Memory', `${health.memoryUsage?.systemPercent ?? 0}% (${health.system?.freeMemory ?? 0}MB free / ${health.system?.totalMemory ?? 0}MB)`],
+    ['V8 Heap', `${health.memoryUsage?.heapPercent ?? 0}% (${health.memoryUsage?.heapUsed ?? 0}MB / ${health.memoryUsage?.heapTotal ?? 0}MB)`],
+    ['CPU Usage', `${health.cpu?.loadAvg1m || '0'}%`],
     ['CPU Cores', String(health.cpu?.cores ?? '—')],
     ['Avg Response Time', `${health.api?.avgResponseTime ?? 0}ms`],
     ['Total Requests', String(health.api?.totalRequests ?? 0)],

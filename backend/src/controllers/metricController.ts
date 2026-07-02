@@ -162,12 +162,43 @@ export const getMetrics = async (req: Request, res: Response) => {
     const where: any = { timestamp: { [Op.between]: [since, until] } };
     if (metricName) where.metricName = metricName;
 
-    const metrics = await SystemMetric.findAll({
-      where,
-      order: [['timestamp', 'DESC']],
-      limit: 500,
-    });
-    res.json(metrics);
+    // Calculate time span in hours to decide aggregation strategy
+    const spanHours = (until.getTime() - since.getTime()) / (1000 * 60 * 60);
+
+    if (spanHours > 12) {
+      // For large ranges, aggregate into hourly buckets using AVG
+      // This ensures 3d = ~72 points, 7d = ~168 points (manageable)
+      const replacements: any = { since, until };
+      let nameClause = '';
+      if (metricName) {
+        nameClause = 'AND "metricName" = :metricName';
+        replacements.metricName = metricName;
+      }
+
+      const metrics = await SystemMetric.sequelize!.query(
+        `SELECT
+          date_trunc('hour', "timestamp") AS "timestamp",
+          ROUND(AVG("metricValue")::numeric, 2) AS "metricValue",
+          "metricName"
+        FROM "system_metrics"
+        WHERE "timestamp" BETWEEN :since AND :until ${nameClause}
+        GROUP BY date_trunc('hour', "timestamp"), "metricName"
+        ORDER BY date_trunc('hour', "timestamp") ASC`,
+        {
+          replacements,
+          type: 'SELECT' as any,
+        }
+      );
+      res.json(metrics);
+    } else {
+      // For short ranges (≤12h), return raw data points
+      const metrics = await SystemMetric.findAll({
+        where,
+        order: [['timestamp', 'ASC']],
+        raw: true,
+      });
+      res.json(metrics);
+    }
   } catch (error) {
     res.status(500).json({ message: 'Server error', error });
   }

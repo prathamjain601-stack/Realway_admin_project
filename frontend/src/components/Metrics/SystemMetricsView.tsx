@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 interface SystemHealth {
   uptime: number;
   uptimeFormatted: string;
-  memoryUsage: { rss: number; heapUsed: number; heapTotal: number; percentUsed: number };
+  memoryUsage: { rss: number; heapUsed: number; heapTotal: number; heapPercent: number; systemPercent: number };
   cpu: { loadAvg1m: string; loadAvg5m: string; cores: number };
   api: { totalRequests: number; avgResponseTime: number };
   system: { platform: string; nodeVersion: string; totalMemory: number; freeMemory: number };
@@ -17,7 +17,7 @@ const SystemMetricsView = () => {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [metricsHistory, setMetricsHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMetric, setSelectedMetric] = useState('memory_percent');
+  const [selectedMetric, setSelectedMetric] = useState('system_memory_percent');
   const [timeRange, setTimeRange] = useState('24');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -36,10 +36,16 @@ const SystemMetricsView = () => {
       ]);
       setHealth(healthRes.data);
       setMetricsHistory(
-        metricsRes.data.reverse().map((m: any) => ({
-          time: new Date(m.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          value: m.metricValue,
-        }))
+        metricsRes.data.map((m: any) => {
+          const d = new Date(m.timestamp);
+          // Include date for multi-day ranges so you can tell which day is which
+          const showDate = parseInt(timeRange) > 24 || timeRange === 'custom';
+          const time = showDate
+            ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+              d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+            : d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          return { time, value: parseFloat(m.metricValue) };
+        })
       );
     } catch (error) {
       console.error('Failed to fetch system metrics');
@@ -72,16 +78,16 @@ const SystemMetricsView = () => {
     },
     {
       icon: HardDrive,
-      label: 'Memory Usage',
-      value: `${health?.memoryUsage.percentUsed || 0}%`,
-      sub: `${health?.memoryUsage.heapUsed || 0}MB / ${health?.memoryUsage.heapTotal || 0}MB`,
+      label: 'System Memory',
+      value: `${health?.memoryUsage.systemPercent || 0}%`,
+      sub: `${health?.system.freeMemory || 0}MB free / ${health?.system.totalMemory || 0}MB`,
       color: 'text-blue-400',
       bgColor: 'bg-blue-500',
     },
     {
       icon: Cpu,
-      label: 'CPU Load (1m)',
-      value: health?.cpu.loadAvg1m || '0',
+      label: 'CPU Usage',
+      value: `${health?.cpu.loadAvg1m || '0'}%`,
       sub: `${health?.cpu.cores || 0} cores`,
       color: 'text-purple-400',
       bgColor: 'bg-purple-500',
@@ -213,9 +219,10 @@ const SystemMetricsView = () => {
               onChange={(e) => setSelectedMetric(e.target.value)}
               className="bg-dark-bg/50 border border-dark-border rounded-lg px-3 py-1.5 text-sm text-gray-300 outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="memory_percent">Memory %</option>
-              <option value="cpu_load_1m">CPU Load</option>
-              <option value="api_avg_response_ms">API Response Time</option>
+              <option value="system_memory_percent">System Memory (%)</option>
+              <option value="cpu_usage_percent">CPU Usage (%)</option>
+              <option value="api_avg_response_ms">API Response (ms)</option>
+              <option value="heap_percent">V8 Heap (%)</option>
               <option value="heap_used_mb">Heap Usage (MB)</option>
             </select>
           </div>
@@ -260,7 +267,9 @@ const SystemMetricsView = () => {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={metricsHistory}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="time" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="time" stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false}
+                  interval={metricsHistory.length > 50 ? Math.floor(metricsHistory.length / 8) : metricsHistory.length > 20 ? 2 : 0}
+                />
                 <YAxis stroke="#94a3b8" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', color: '#f8fafc' }}
